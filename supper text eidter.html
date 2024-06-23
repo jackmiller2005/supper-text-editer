@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Slide Editor</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; overflow-x: hidden; }
+    .toolbar { background: #f3f3f3; box-shadow: 0 2px 4px rgba(0,0,0,.1); display: flex; padding: 10px; position: fixed; top: 0; left: 0; width: 100%; z-index: 1000; }
+    .toolbar button, .dropbtn { background: #fff; border: none; padding: 8px; margin-right: 8px; cursor: pointer; border-radius: 4px; }
+    .toolbar button:hover, .dropbtn:hover { background: #e0e0e0; }
+    .slide-container { position: absolute; top: 50px; left: 0; right: 0; bottom: 0; overflow: auto; }
+    .slide { width: 8.5in; height: 11in; max-width: calc(100vw - 40px); border: 1px solid #000; background: #fff; padding: 10px; margin: 20px auto; position: relative; }
+    .draggable { position: absolute; padding: 5px; background: #fff; cursor: move; border: 1px solid transparent; resize: both; min-width: 100px; min-height: 50px; }
+    .delete-button { position: absolute; top: -10px; right: -10px; background: red; color: #fff; border: none; border-radius: 50%; width: 20px; height: 20px; display: none; justify-content: center; align-items: center; cursor: pointer; }
+    .draggable:hover .delete-button { display: flex; }
+    .resize-handle { width: 10px; height: 10px; background: #007bff; border-radius: 50%; cursor: nwse-resize; position: absolute; bottom: -5px; right: -5px; }
+    .text-box { width: 200px; height: 100px; resize: both; padding: 5px; border: 1px solid transparent; overflow: auto; }
+    .text-box:focus { outline: none; border-color: #007bff; }
+
+    /* Dropdown styles */
+    .dropdown { position: relative; display: inline-block; }
+    .dropdown-content { display: none; position: absolute; background-color: #f9f9f9; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2); z-index: 1000; }
+    .dropdown-content button { color: black; padding: 12px 16px; text-decoration: none; display: block; cursor: pointer; }
+    .dropdown-content button:hover { background-color: #f1f1f1; }
+    .dropdown:hover .dropdown-content { display: block; }
+    .dropdown:hover .dropbtn { background-color: #e0e0e0; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="addElement('text')">Add Text</button>
+    <button onclick="addElement('image')">Add Image</button>
+    <div class="dropdown">
+      <button class="dropbtn">Shapes</button>
+      <div class="dropdown-content">
+        <button onclick="promptColorAndAddShape('rectangle')">Rectangle</button>
+        <button onclick="promptColorAndAddShape('circle')">Circle</button>
+      </div>
+    </div>
+    <div class="dropdown">
+      <button class="dropbtn">Font Options</button>
+      <div class="dropdown-content">
+        <button onclick="adjustFontSize(2)">Font +</button>
+        <button onclick="adjustFontSize(-2)">Font -</button>
+        <div class="dropdown">
+          <button class="dropbtn">Text Color</button>
+          <div class="dropdown-content" id="text-color-dropdown">
+            <input type="text" id="color-input" placeholder="Enter color name">
+            <button onclick="applyTextColor()">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button onclick="addSlide()">Add Slide</button>
+    <button onclick="exportPDF()">Export PDF</button>
+  </div>
+  <div class="slide-container" id="slide-container">
+    <div class="slide" id="slide0">
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.2/html2pdf.bundle.min.js"></script>
+  <script>
+    let selectedTextBox = null;
+    let currentSlide = 0;
+
+    function addElement(type) {
+      const element = document.createElement('div');
+      element.className = 'draggable';
+      element.style.cssText = 'left: 50px; top: 50px; width: 200px; height: 100px;';
+
+      if (type === 'text') {
+        const textBox = document.createElement('textarea');
+        textBox.placeholder = 'Type here...';
+        textBox.className = 'text-box';
+        textBox.addEventListener('mousedown', (e) => { selectedTextBox = textBox; e.stopPropagation(); });
+        textBox.addEventListener('focus', (e) => { textBox.style.border = '1px solid #007bff'; });
+        textBox.addEventListener('blur', (e) => { textBox.style.border = '1px solid transparent'; });
+        element.appendChild(textBox);
+      } else if (type === 'image') {
+        const img = document.createElement('img');
+        img.src = 'https://via.placeholder.com/150';
+        img.alt = 'Image';
+        img.style.cssText = 'width: 100%; height: 100%;';
+        img.onclick = () => selectImage(img);
+        element.appendChild(img);
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'resize-handle';
+        resizeHandle.addEventListener('mousedown', startResize);
+        element.appendChild(resizeHandle);
+      }
+
+      element.appendChild(createDeleteButton());
+      document.getElementById(`slide${currentSlide}`).appendChild(element);
+      makeDraggable(element);
+    }
+
+    function createDeleteButton() {
+      const deleteButton = document.createElement('button');
+      deleteButton.className = 'delete-button';
+      deleteButton.innerHTML = '&times;';
+      deleteButton.onclick = (e) => { e.stopPropagation(); deleteButton.parentElement.remove(); };
+      return deleteButton;
+    }
+
+    function makeDraggable(element) {
+      let isDragging = false, initialX, initialY;
+      const slideRect = element.parentElement.getBoundingClientRect();
+
+      element.addEventListener('mousedown', (e) => {
+        selectSlide(element);
+        isDragging = true;
+        initialX = element.offsetLeft - e.clientX;
+        initialY = element.offsetTop - e.clientY;
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('mouseup', () => { isDragging = false; document.removeEventListener('mousemove', drag); });
+      });
+
+      function drag(e) {
+        if (isDragging) {
+          let newX = e.clientX + initialX;
+          let newY = e.clientY + initialY;
+          newX = Math.max(newX, 0);
+          newY = Math.max(newY, 0);
+          newX = Math.min(newX, slideRect.width - element.offsetWidth);
+          newY = Math.min(newY, slideRect.height - element.offsetHeight);
+          element.style.left = newX + 'px';
+          element.style.top = newY + 'px';
+        }
+      }
+
+      // Resize functionality
+      const resizeHandle = document.createElement('div');
+      resizeHandle.className = 'resize-handle';
+      resizeHandle.addEventListener('mousedown', startResize);
+      element.appendChild(resizeHandle);
+    }
+
+    function startResize(e) {
+      const resizeHandle = e.target;
+      const parentElement = resizeHandle.parentElement;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startWidth = parseFloat(getComputedStyle(parentElement).getPropertyValue('width'));
+      const startHeight = parseFloat(getComputedStyle(parentElement).getPropertyValue('height'));
+
+      document.addEventListener('mousemove', resize);
+      document.addEventListener('mouseup', stopResize);
+
+      function resize(e) {
+        parentElement.style.width = startWidth + e.clientX - startX + 'px';
+        parentElement.style.height = startHeight + e.clientY - startY + 'px';
+      }
+
+      function stopResize() {
+        document.removeEventListener('mousemove', resize);
+        document.removeEventListener('mouseup', stopResize);
+      }
+    }
+
+    function selectImage(imgElement) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = function(e) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(event) { imgElement.src = event.target.result; };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+    }
+
+    function adjustFontSize(amount) {
+      if (selectedTextBox) {
+        const computedStyle = window.getComputedStyle(selectedTextBox);
+        let currentSize = parseFloat(computedStyle.getPropertyValue('font-size'));
+        selectedTextBox.style.fontSize = (currentSize + amount) + 'px';
+      }
+    }
+
+    function changeTextColor(color) {
+      if (selectedTextBox) {
+        selectedTextBox.style.color = color;
+      }
+    }
+
+    function promptColorAndAddShape(shapeType) {
+      const colorInput = prompt('Enter color name for the shape (e.g., red, blue):').trim().toLowerCase();
+      let colorCode = '';
+
+      switch (colorInput) {
+        case 'black':
+          colorCode = '#000000';
+          break;
+        case 'red':
+          colorCode = '#ff0000';
+          break;
+        case 'green':
+          colorCode = '#008000';
+          break;
+        case 'blue':
+          colorCode = '#0000ff';
+          break;
+        default:
+          colorCode = colorInput; // Assume user entered a valid color code directly
+      }
+
+      if (colorCode) {
+        addShape(shapeType, colorCode);
+      } else {
+        alert('Invalid color name or code entered.');
+      }
+    }
+
+    function addShape(shapeType, color) {
+      const element = document.createElement('div');
+      element.className = 'draggable';
+
+      if (shapeType === 'rectangle') {
+        element.style.cssText = `left: 50px; top: 50px; width: 150px; height: 100px; background-color: ${color};`;
+      } else if (shapeType === 'circle') {
+        element.style.cssText = `left: 50px; top: 50px; width: 100px; height: 100px; background-color: ${color}; border-radius: 50%;`;
+      }
+
+      element.appendChild(createDeleteButton());
+      document.getElementById(`slide${currentSlide}`).appendChild(element);
+      makeDraggable(element);
+    }
+
+    function addSlide() {
+      currentSlide++;
+      const slideContainer = document.getElementById('slide-container');
+      const newSlide = document.createElement('div');
+      newSlide.className = 'slide';
+      newSlide.id = `slide${currentSlide}`;
+      slideContainer.appendChild(newSlide);
+    }
+
+    function deleteSlide(slideElement) {
+      slideElement.remove();
+    }
+
+    function exportPDF() {
+      const slides = document.querySelectorAll('.slide');
+      const element = document.createElement('div');
+      slides.forEach((slide, index) => {
+        const clonedSlide = slide.cloneNode(true);
+        clonedSlide.id = `slide-${index}`;
+        element.appendChild(clonedSlide);
+      });
+      html2pdf().from(element).set({
+        margin: 0,
+        filename: 'slides.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, logging: true, dpi: 192, letterRendering: true },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      }).save();
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Delete') {
+        const selectedSlide = document.querySelector('.slide.selected');
+        if (selectedSlide) {
+          deleteSlide(selectedSlide);
+        }
+      }
+    });
+
+    function selectSlide(element) {
+      document.querySelectorAll('.slide').forEach(slide => slide.classList.remove('selected'));
+      element.closest('.slide').classList.add('selected');
+    }
+
+    function applyTextColor() {
+      const colorInput = document.getElementById('color-input').value.trim().toLowerCase();
+      changeTextColor(colorInput);
+    }
+  </script>
+</body>
+</html>
