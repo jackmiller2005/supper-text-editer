@@ -50,6 +50,15 @@
         </div>
       </div>
     </div>
+    <div class="dropdown">
+      <button class="dropbtn">Font Style</button>
+      <div class="dropdown-content">
+        <button onclick="applyFontStyle('Arial, sans-serif')">Arial</button>
+        <button onclick="applyFontStyle('Times New Roman, serif')">Times New Roman</button>
+        <button onclick="applyFontStyle('Courier New, monospace')">Courier New</button>
+      </div>
+    </div>
+    <button onclick="addHtml()">Add HTML</button>
     <button onclick="addSlide()">Add Slide</button>
     <button onclick="exportPDF()">Export PDF</button>
   </div>
@@ -181,6 +190,25 @@
     function changeTextColor(color) {
       if (selectedTextBox) {
         selectedTextBox.style.color = color;
+      }
+    }
+
+    function applyFontStyle(fontFamily) {
+      if (selectedTextBox) {
+        selectedTextBox.style.fontFamily = fontFamily;
+      }
+    }
+
+    function addHtml() {
+      const htmlContent = prompt('Enter HTML content:');
+      if (htmlContent) {
+        const element = document.createElement('div');
+        element.className = 'draggable';
+        element.style.cssText = 'left: 50px; top: 50px; min-width: 100px; min-height: 50px; border: 1px solid #000; background: #fff;';
+        element.innerHTML = htmlContent;
+        element.appendChild(createDeleteButton());
+        document.getElementById(`slide${currentSlide}`).appendChild(element);
+        makeDraggable(element);
       }
     }
 
